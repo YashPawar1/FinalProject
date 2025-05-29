@@ -15,13 +15,27 @@ import pandas as pd
 import os
 from streamlit_webrtc import VideoTransformerBase, webrtc_streamer
 
+from gtts import gTTS
+import os
+from playsound import playsound
+
+
 # ========== TEXT TO SPEECH ==========
-engine = pyttsx3.init()
 def speak(text):
-    def run_tts():
-        engine.say(text)
-        engine.runAndWait()
-    threading.Thread(target=run_tts, daemon=True).start()
+    def _speak():
+        try:
+            tts = gTTS(text, lang='en', tld='co.uk')  # UK accent sounds deeper
+            filename = "temp_voice.mp3"
+            tts.save(filename)
+            playsound(filename)
+            os.remove(filename)
+        except Exception as e:
+            print("Speech error:", e)
+
+    threading.Thread(target=_speak, daemon=True).start()
+
+
+
 
 # ========== MEDIAPIPE POSE SETUP ==========
 mp_drawing = mp.solutions.drawing_utils
@@ -130,32 +144,38 @@ class PoseEstimator(VideoTransformerBase):
                         feedback_given = True
             
             elif self.exercise == "press":
-                    shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                                landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-                    elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
-                            landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-                    wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
-                            landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
-                    angle = calculate_angle(shoulder, elbow, wrist)
+                shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                            landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
+                        landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+                wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
+                        landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+                angle = calculate_angle(shoulder, elbow, wrist)
 
-                    if angle < 70:
-                        self.stage = "down"
-                    if angle > 160 and self.stage == "down":
-                        self.stage = "up"
-                        self.counter += 1
-                        self.calories += calories_per_rep[self.exercise]
-                        # Log only once per new rep
-                        if self.counter not in self.logged_reps:
-                            self.logged_reps.add(self.counter)
+                # Show angle for debugging (optional)
+                cv2.putText(image, f"Angle: {int(angle)}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 
-                            if "session_data" not in st.session_state:
-                                st.session_state["session_data"] = [] 
+                if angle < 70:
+                    self.stage = "down"
+                elif angle > 160 and self.stage == "down":
+                    self.stage = "up"
+                    self.counter += 1
+                    self.calories += calories_per_rep[self.exercise]
 
-                            st.session_state["session_data"].append({
-                                "exercise": self.exercise,
-                                "reps": self.counter,
-                                "calories": round(self.calories, 2)
-                            })
+                    speak(f"Rep {self.counter}. Total calories {round(self.calories, 2)}.")
+
+                    if self.counter not in self.logged_reps:
+                        self.logged_reps.add(self.counter)
+
+                        if "session_data" not in st.session_state:
+                            st.session_state["session_data"] = []
+
+                        st.session_state["session_data"].append({
+                            "exercise": self.exercise,
+                            "reps": self.counter,
+                            "calories": round(self.calories, 2)
+                        })
+
 
             mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
@@ -269,6 +289,7 @@ with left:
 
     with workout_container:
         st.markdown("<div class='bordered-header'>💪 Workout Coach</div>", unsafe_allow_html=True)
+
         exercise = st.selectbox("Choose Exercise", ["squat", "pushup", "curl", "lunge", "press"])
         mode = st.radio("Input Mode", ["Webcam", "Upload Video"], horizontal=True)
 
@@ -356,6 +377,3 @@ st.markdown(
 )
 # Show the workout summary dashboard
 show_dashboard()
-
-
-
